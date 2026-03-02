@@ -27,8 +27,11 @@ This repo packages OpenClaw with a **/setup** web wizard so users can deploy and
    - Complete the onboarding wizard (choose a model provider, add API keys, optionally add chat channels).
 
 5. Visit `https://<your-domain>/` to use OpenClaw.
+   - When prompted for the gateway auth token, find the auto-generated value in the **Secrets** tab at [dashboard.specific.dev](https://dashboard.specific.dev).
 
 ## Local development
+
+Requires [Docker](https://www.docker.com/) to be installed and running.
 
 ```bash
 specific dev
