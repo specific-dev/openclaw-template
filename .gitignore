@@ -11,5 +11,10 @@ npm-debug.log*
 # Backup exports
 *.tar.gz
 
+# Specific
+.specific
+specific.local
+.tmpdata
+
 # OS
 .DS_Store

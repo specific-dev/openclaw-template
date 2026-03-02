@@ -20,7 +20,7 @@ RUN corepack enable
 
 WORKDIR /openclaw
 
-# Pin to a known-good ref (tag/branch). Override in Railway template settings if needed.
+# Pin to a known-good ref (tag/branch). Override via build arg if needed.
 # Using a released tag avoids build breakage when `main` temporarily references unpublished packages.
 ARG OPENCLAW_GIT_REF=v2026.2.9
 RUN git clone --depth 1 --branch "${OPENCLAW_GIT_REF}" https://github.com/openclaw/openclaw.git .
@@ -54,7 +54,7 @@ RUN apt-get update \
 # `openclaw update` expects pnpm. Provide it in the runtime image.
 RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
 
-# Persist user-installed tools by default by targeting the Railway volume.
+# Persist user-installed tools by default by targeting the data volume.
 # - npm global installs -> /data/npm
 # - pnpm global installs -> /data/pnpm (binaries) + /data/pnpm-store (store)
 ENV NPM_CONFIG_PREFIX=/data/npm
@@ -80,8 +80,7 @@ COPY src ./src
 
 # The wrapper listens on $PORT.
 # IMPORTANT: Do not set a default PORT here.
-# Railway injects PORT at runtime and routes traffic to that port.
-# If we force a different port, deployments can come up but the domain will route elsewhere.
+# The platform injects PORT at runtime and routes traffic to that port.
 EXPOSE 8080
 
 # Ensure PID 1 reaps zombies and forwards signals.

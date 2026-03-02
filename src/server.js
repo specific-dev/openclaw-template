@@ -8,26 +8,25 @@ import express from "express";
 import httpProxy from "http-proxy";
 import * as tar from "tar";
 
-// Migrate deprecated CLAWDBOT_* env vars → OPENCLAW_* so existing Railway deployments
-// keep working. Users should update their Railway Variables to use the new names.
+// Migrate deprecated CLAWDBOT_* env vars → OPENCLAW_* so existing deployments
+// keep working. Users should update their variables to use the new names.
 for (const suffix of ["PUBLIC_PORT", "STATE_DIR", "WORKSPACE_DIR", "GATEWAY_TOKEN", "CONFIG_PATH"]) {
   const oldKey = `CLAWDBOT_${suffix}`;
   const newKey = `OPENCLAW_${suffix}`;
   if (process.env[oldKey] && !process.env[newKey]) {
     process.env[newKey] = process.env[oldKey];
-    // Best-effort compatibility shim for old Railway templates.
-    // Intentionally no warning: Railway templates can still set legacy keys and warnings are noisy.
+    // Best-effort compatibility shim for old templates.
+    // Intentionally no warning: legacy keys may still be set and warnings are noisy.
   }
   // Avoid forwarding legacy variables into OpenClaw subprocesses.
   // OpenClaw logs a warning when deprecated CLAWDBOT_* variables are present.
   delete process.env[oldKey];
 }
 
-// Railway injects PORT at runtime and routes traffic to that port.
-// Do not force a different public port in the container image, or the service may
-// boot but the Railway domain will be routed to a different port.
+// The platform injects PORT at runtime and routes traffic to that port.
+// Do not force a different public port in the container image.
 //
-// OPENCLAW_PUBLIC_PORT is kept as an escape hatch for non-Railway deployments.
+// OPENCLAW_PUBLIC_PORT is kept as an escape hatch.
 const PORT = Number.parseInt(process.env.PORT ?? process.env.OPENCLAW_PUBLIC_PORT ?? "3000", 10);
 
 // State/workspace
@@ -137,7 +136,7 @@ function isConfigured() {
 let gatewayProc = null;
 let gatewayStarting = null;
 
-// Debug breadcrumbs for common Railway failures (502 / "Application failed to respond").
+// Debug breadcrumbs for common failures (502 / "Application failed to respond").
 let lastGatewayError = null;
 let lastGatewayExit = null;
 let lastDoctorOutput = null;
@@ -276,7 +275,7 @@ function requireSetupAuth(req, res, next) {
     return res
       .status(500)
       .type("text/plain")
-      .send("SETUP_PASSWORD is not set. Set it in Railway Variables before using /setup.");
+      .send("SETUP_PASSWORD is not set. Set it in your environment variables before using /setup.");
   }
 
   const header = req.headers.authorization || "";
@@ -299,7 +298,7 @@ const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
 
-// Minimal health endpoint for Railway.
+// Minimal health endpoint.
 app.get("/setup/healthz", (_req, res) => res.json({ ok: true }));
 
 async function probeGateway() {
@@ -325,7 +324,7 @@ async function probeGateway() {
   });
 }
 
-// Public health endpoint (no auth) so Railway can probe without /setup.
+// Public health endpoint (no auth) so the platform can probe without /setup.
 // Keep this free of secrets.
 app.get("/healthz", async (_req, res) => {
   let gatewayReachable = false;
@@ -488,7 +487,7 @@ app.get("/setup", requireSetupAuth, (_req, res) => {
 
   <div class="card">
     <h2>2b) Advanced: Custom OpenAI-compatible provider (optional)</h2>
-    <p class="muted">Use this to configure an OpenAI-compatible API that requires a custom base URL (e.g. Ollama, vLLM, LM Studio, hosted proxies). You usually set the API key as a Railway variable and reference it here.</p>
+    <p class="muted">Use this to configure an OpenAI-compatible API that requires a custom base URL (e.g. Ollama, vLLM, LM Studio, hosted proxies). You usually set the API key as an environment variable and reference it here.</p>
 
     <label>Provider id (e.g. ollama, deepseek, myproxy)</label>
     <input id="customProviderId" placeholder="ollama" />
@@ -748,7 +747,7 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]));
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
 
-    // Railway runs behind a reverse proxy. Trust loopback as a proxy hop so local client detection
+    // The platform runs behind a reverse proxy. Trust loopback as a proxy hop so local client detection
     // remains correct when X-Forwarded-* headers are present.
     await runCmd(
       OPENCLAW_NODE,
@@ -917,7 +916,7 @@ app.get("/setup/api/debug", requireSetupAuth, async (_req, res) => {
       lastGatewayExit,
       lastDoctorAt,
       lastDoctorOutput,
-      railwayCommit: process.env.RAILWAY_GIT_COMMIT_SHA || null,
+      gitCommit: process.env.GIT_COMMIT_SHA || null,
     },
     openclaw: {
       entry: OPENCLAW_ENTRY,
@@ -1148,7 +1147,7 @@ app.post("/setup/api/reset", requireSetupAuth, async (_req, res) => {
   // Reset: stop gateway (frees memory) + delete config file(s) so /setup can rerun.
   // Keep credentials/sessions/workspace by default.
   try {
-    // Stop gateway to avoid running gateway + onboard concurrently on small Railway instances.
+    // Stop gateway to avoid running gateway + onboard concurrently on small instances.
     try {
       if (gatewayProc) {
         try { gatewayProc.kill("SIGTERM"); } catch {}
@@ -1264,7 +1263,7 @@ app.post("/setup/import", requireSetupAuth, async (req, res) => {
       return res
         .status(400)
         .type("text/plain")
-        .send("Import is only supported when OPENCLAW_STATE_DIR and OPENCLAW_WORKSPACE_DIR are under /data (Railway volume).\n");
+        .send("Import is only supported when OPENCLAW_STATE_DIR and OPENCLAW_WORKSPACE_DIR are under /data (persistent volume).\n");
     }
 
     // Stop gateway before restore so we don't overwrite live files.
@@ -1330,7 +1329,7 @@ proxy.on("error", (err, _req, res) => {
 
 // --- Dashboard password protection ---
 // Require the same SETUP_PASSWORD for the entire Control UI dashboard,
-// not just the /setup routes.  Healthcheck is excluded so Railway probes work.
+// not just the /setup routes.  Healthcheck is excluded so platform probes work.
 function requireDashboardAuth(req, res, next) {
   if (req.path === "/healthz" || req.path === "/setup/healthz") return next();
   if (!SETUP_PASSWORD) return next(); // no password configured → open
@@ -1432,7 +1431,7 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
 
   // Sync gateway tokens in config with the current env var on every startup.
   // This prevents "gateway token mismatch" when OPENCLAW_GATEWAY_TOKEN changes
-  // (e.g. Railway variable update) but the config file still has the old value.
+  // (e.g. env variable update) but the config file still has the old value.
   if (isConfigured() && OPENCLAW_GATEWAY_TOKEN) {
     console.log("[wrapper] syncing gateway tokens in config...");
     try {
